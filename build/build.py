@@ -33,7 +33,15 @@ def git_version() -> str:
         text=True,
         check=True,
     )
-    return result.stdout.strip()
+    raw = result.stdout.strip()
+    # Tag found: strip the conventional 'v' prefix (e.g. v1.2.3 → 1.2.3).
+    if raw.startswith("v"):
+        return raw[1:]
+    # No tags: git fell back to a bare commit hash (e.g. "f28b6ff" or
+    # "f28b6ff-dirty").  Prefix with 0.0.0+ so the version is valid Debian
+    # syntax and sorts below any real release, regardless of whether the first
+    # character of the hash happens to be a digit.
+    return "0.0.0+" + raw
 
 
 def stamp_script(version: str) -> None:

@@ -83,10 +83,12 @@ def image_exists(image: str) -> bool:
 
 # Inline shell script run inside each test container.
 _CONTAINER_SCRIPT = """\
-DEBIAN_FRONTEND=noninteractive \
-    apt-get install -y /tmp/apt-signing-key-exporter.deb \
+dpkg -i /tmp/apt-signing-key-exporter.deb \
     >/tmp/install_stdout 2>/tmp/install_stderr \
-|| { echo "apt-get install failed:" >&2; cat /tmp/install_stderr >&2; exit 1; }
+|| { echo "dpkg install failed:" >&2
+     echo "  --- stdout ---" >&2; cat /tmp/install_stdout >&2
+     echo "  --- stderr ---" >&2; cat /tmp/install_stderr >&2
+     exit 1; }
 apt_signing_key_exporter 2>/tmp/script_stderr
 cat /tmp/script_stderr >&2
 """
