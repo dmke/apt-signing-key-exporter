@@ -1,5 +1,7 @@
 # apt-signing-key-exporter
 
+[![CI](https://github.com/dmke/apt-signing-key-exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/dmke/apt-signing-key-exporter/actions/workflows/ci.yml)
+
 A [Prometheus][] [node_exporter][] [textfile-collector][textfile] generator
 script that reads all APT source list files on a Debian or Ubuntu host,
 identifies the signing keys referenced by each source entry, and writes each
@@ -43,11 +45,15 @@ apt_signing_key_expire_time_seconds{fingerprint="...",key_file="/usr/share/keyri
 
 ## Requirements
 
-- Debian 12 (bookworm) or later, or Ubuntu 24.04 (noble) or later
-- `python3`
-- `python3-apt`
-- `python3-gpg`
+- `python3`, v3.9 or later
+- `python3-apt`, v2.2.1.1 or later
+- `python3-gpg`, v0.14.0 or later
 - [node_exporter][] with the textfile collector enabled
+
+The `python3` dependencies are satisfied with:
+
+- Debian 11 (Bullseye) or later
+- Ubuntu 22.04 (Jammy) or later
 
 [node_exporter]: https://github.com/prometheus/node_exporter
 
@@ -56,12 +62,21 @@ apt_signing_key_expire_time_seconds{fingerprint="...",key_file="/usr/share/keyri
 
 ### From a .deb package (recommended)
 
-The package is built with [nfpm][]. Install nfpm, then:
+Pre-built packages are available on the [releases page][releases]. Download
+the latest `.deb` and install it:
+
+```console
+# dpkg -i apt-signing-key-exporter_*.deb
+```
+
+Or build from source with [nfpm][]:
 
 ```console
 $ python3 build/build.py
 # dpkg -i build/apt-signing-key-exporter_*.deb
 ```
+
+[releases]: https://github.com/dmke/apt-signing-key-exporter/releases
 
 The package installs:
 
@@ -79,15 +94,25 @@ right away without waiting for midnight.
 
 ### Manual installation
 
-Download the [apt_signing_key_exporter.py](./src/apt_signing_key_exporter.py)
-(or clone this repository), then run:
+Download the script from the [releases page][releases] (the `apt_signing_key_exporter.py`
+asset), and install the dependencies:
 
 ```console
+$ curl -fLO https://github.com/dmke/apt-signing-key-exporter/releases/latest/download/apt_signing_key_exporter.py
 # apt install python3-apt python3-gpg
-# install -m 0755 /path/to/apt_signing_key_exporter.py /usr/bin/apt_signing_key_exporter
 ```
 
-Then run it directly or set up your own cron job / systemd unit.
+From here, you can just run it:
+
+```console
+$ python3 ./apt_signing_key_exporter.py
+```
+
+To install it system-wide, run:
+
+```console
+# install -m 0755 apt_signing_key_exporter.py /usr/bin/apt_signing_key_exporter
+```
 
 
 ## Configuration
