@@ -1,0 +1,9 @@
+# Configuration for apt-signing-key-exporter
+# This file is read by apt-signing-key-exporter.service as an EnvironmentFile.
+
+# Path to the output file for node_exporter's textfile collector.
+# The directory must exist and be writable by the service user.
+#
+# The standard location for the Debian prometheus-node-exporter package is
+# /var/lib/prometheus/node-exporter/. Adjust if you use a different path.
+APT_SIGNING_KEY_EXPORTER_OUTPUT=/var/lib/prometheus/node-exporter/apt-signing-key-exporter.prom

@@ -1,0 +1,31 @@
+[Unit]
+Description=Generate APT signing key expiry metrics for node_exporter
+# The script reads /etc/apt/ and /usr/share/keyrings/;
+# local filesystems must be mounted, but no network is required.
+After=local-fs.target
+
+[Service]
+Type=oneshot
+
+EnvironmentFile=/etc/default/apt-signing-key-exporter
+ExecStart=/usr/bin/python3 /usr/bin/apt_signing_key_exporter \
+    -o ${APT_SIGNING_KEY_EXPORTER_OUTPUT}
+
+# Hardening
+
+# The script only reads world-readable files under /etc and
+# /usr, and writes a single file under /var.
+NoNewPrivileges=yes
+# Mount /usr, /boot, and /etc read-only (writes go to /var, which stays rw).
+ProtectSystem=full
+# Hide the calling user's home directory.
+ProtectHome=yes
+# Give the service its own private /tmp (not used, but limits exposure).
+PrivateTmp=yes
+# No hardware device access needed.
+PrivateDevices=yes
+# Restrict to the native syscall ABI (no 32-bit syscalls on amd64).
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

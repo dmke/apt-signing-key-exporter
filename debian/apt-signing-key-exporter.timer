@@ -1,0 +1,16 @@
+[Unit]
+Description=Daily update of APT signing key expiry metrics for node_exporter
+
+[Timer]
+# Fire once a day at midnight, then add a large random delay so that in a
+# fleet of hosts the updates are spread across the night rather than all
+# hitting at the same moment.
+OnCalendar=daily
+RandomizedDelaySec=6h
+
+# If the system was off or asleep when the timer would have fired (e.g. a
+# laptop), run the service at the next boot instead of skipping that day.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

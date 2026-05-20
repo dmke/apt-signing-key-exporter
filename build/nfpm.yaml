@@ -1,0 +1,44 @@
+name: apt-signing-key-exporter
+version: ${VERSION}
+arch: all
+platform: linux
+section: utils
+priority: optional
+license: MIT
+maintainer: Dominik Menke <dom@digineo.de>
+homepage: https://github.com/dmke/apt-signing-key-exporter
+description: |
+  Prometheus textfile-collector exporter for APT signing key expiry.
+  Reads all APT source list files, identifies signing keys referenced via
+  signed-by (traditional .list format) or Signed-By (deb822 .sources format),
+  and writes each key's expiration date as a Prometheus gauge metric to a file
+  for consumption by node_exporter's textfile collector.
+
+depends:
+  - python3
+  - python3-apt
+  - python3-gpg
+
+contents:
+  # Main script (versioned copy produced by build/build.sh)
+  - src: build/apt_signing_key_exporter.py
+    dst: /usr/bin/apt_signing_key_exporter
+    file_info:
+      mode: 0755
+
+  # systemd units
+  - src: debian/apt-signing-key-exporter.service
+    dst: /lib/systemd/system/apt-signing-key-exporter.service
+
+  - src: debian/apt-signing-key-exporter.timer
+    dst: /lib/systemd/system/apt-signing-key-exporter.timer
+
+  # Default configuration — marked config|noreplace so that local edits
+  # (e.g. a custom PROM_FILE path) survive package upgrades.
+  - src: debian/apt-signing-key-exporter.default
+    dst: /etc/default/apt-signing-key-exporter
+    type: config|noreplace
+
+scripts:
+  postinstall: debian/post-install.sh
+  preremove: debian/pre-remove.sh
