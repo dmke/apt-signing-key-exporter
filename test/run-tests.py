@@ -187,7 +187,10 @@ def run_distro(
     )
 
     # No key-read errors expected for well-formed test fixtures.
-    results.assert_not_in("no read-error metric", "apt_signing_key_read_error", stdout)
+    results.assert_in("no read errors", "apt_signing_key_read_errors 1", stdout)
+
+    # The missing-key fixture must produce a warning on stderr.
+    results.assert_in("missing key warning in stderr", "test-missing.gpg", stderr)
 
 
 if __name__ == "__main__":

@@ -277,6 +277,8 @@ def _escape_label(v: str) -> str:
 
 
 def _label_set(labels: dict[str, str]) -> str:
+    if not labels:
+        return ""
     pairs = ", ".join(f'{k}="{_escape_label(v)}"' for k, v in sorted(labels.items()))
     return "{" + pairs + "}"
 
@@ -305,7 +307,7 @@ def collect_metrics() -> str:
         key_to_sources[ref.key_ref].add(ref.source_file)
 
     expire_samples: list[tuple[dict[str, str], int]] = []
-    error_samples: list[tuple[dict[str, str], int]] = []
+    error_count = 0
 
     for key_ref, source_files in sorted(key_to_sources.items()):
         kind = _classify_key_ref(key_ref)
@@ -318,33 +320,13 @@ def collect_metrics() -> str:
             print(f"Info: skipping unsupported Signed-By: {err}", file=sys.stderr)
             continue
         except Exception as err:
-            short_reason = str(err)[:200]
-            for source_file in sorted(source_files):
-                error_samples.append(
-                    (
-                        {
-                            "source_file": source_file,
-                            "key_file": key_file_label,
-                            "reason": short_reason,
-                        },
-                        1,
-                    )
-                )
-            print(f"Warning: {err}", file=sys.stderr)
+            error_count += len(source_files)
+            print(f"Warning: {key_file_label}: {err}", file=sys.stderr)
             continue
 
         if not key_records:
-            for source_file in sorted(source_files):
-                error_samples.append(
-                    (
-                        {
-                            "source_file": source_file,
-                            "key_file": key_file_label,
-                            "reason": "no keys found in file",
-                        },
-                        1,
-                    )
-                )
+            error_count += len(source_files)
+            print(f"Warning: {key_file_label}: no keys found in file", file=sys.stderr)
             continue
 
         for record in key_records:
@@ -371,15 +353,14 @@ def collect_metrics() -> str:
         )
         output_lines.append("")
 
-    if error_samples:
-        output_lines.extend(
-            _export_gauge(
-                "apt_signing_key_read_error",
-                "1 if there was an error reading or parsing the signing key file.",
-                error_samples,
-            )
+    output_lines.extend(
+        _export_gauge(
+            "apt_signing_key_read_errors",
+            "Number of signing key files that could not be read or parsed.",
+            [({}, error_count)],
         )
-        output_lines.append("")
+    )
+    output_lines.append("")
 
     return "\n".join(output_lines)
 

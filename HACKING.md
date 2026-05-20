@@ -92,10 +92,9 @@ timestamp. An expiry of `0` means the key never expires.
 for deterministic output, and builds two metric families:
 
 - `apt_signing_key_expire_time_seconds` — expiry timestamp per (sub)key
-- `apt_signing_key_read_error` — set to `1` for any key that could not be read
-  or parsed; carries `source_file`, `key_file`, and `reason` labels (one sample
-  per source file that references the failing key); `fingerprint`, `uid`, and
-  `key_type` are absent because no key could be parsed
+- `apt_signing_key_read_errors` — total number of key files that could not be
+  read or parsed (label-free gauge, always emitted, even when `0`); the full
+  error message for each failure is written to stderr
 
 Integer timestamps are emitted as plain integers.
 
@@ -192,12 +191,12 @@ This calls `python3 build/build.py` to stamp the git version and build a fresh
 
 1. Starts a fresh container from the pre-built test image.
 2. Bind-mounts the `.deb` read-only into the container at `/tmp/apt-signing-key-exporter.deb`.
-3. Runs `DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/...deb`. The
-   postinstall script's `systemctl` calls are silently skipped because
-   `/run/systemd/system` does not exist in a plain Docker container.
+3. Runs `dpkg -i /tmp/...deb`. The postinstall script's `systemctl` calls are
+   silently skipped because `/run/systemd/system` does not exist in a plain
+   Docker container.
 4. Runs `/usr/bin/apt_signing_key_exporter` and captures stdout/stderr.
 5. Asserts on the output: metric names present, expected fingerprints present,
-   disabled entry absent, no `apt_signing_key_read_error` metric.
+   disabled entry absent, `apt_signing_key_read_errors 0` present.
 
 The `.deb` temp file is removed automatically on exit via `try/finally`.
 

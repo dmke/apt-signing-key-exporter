@@ -30,7 +30,7 @@ Keys are inspected via `python3-gpg` (GPGME bindings).
 | Metric | Type | Description | Labels |
 |:-------|:-----|:------------|:-------|
 | `apt_signing_key_expire_time_seconds`  | gauge | Unix timestamp when the key expires; `0` = never expires | `source_file`, `key_file`, `fingerprint`, `uid`, `key_type` (`pub` or `sub`) |
-| `apt_signing_key_read_error`           | gauge | `1` if the key file could not be read or parsed | `source_file`, `key_file`, `reason` (a short error message) |
+| `apt_signing_key_read_errors`          | gauge | Number of key files that could not be read or parsed (full error logged to stderr) | _(none)_ |
 
 Example output:
 
@@ -137,8 +137,8 @@ so node_exporter never reads a partially-written file.
   Resolving these would require reading the system keyring, which is outside
   the scope of this tool.
 - Keys that are referenced by a source entry but whose file does not exist
-  produce an `apt_signing_key_read_error` metric rather than crashing the
-  whole run.
+  increment the `apt_signing_key_read_errors` counter; the full error message
+  is written to stderr.
 
 
 ## License

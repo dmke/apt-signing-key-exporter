@@ -1,0 +1,1 @@
+deb [signed-by=/usr/share/keyrings/apt-sources-test/test-missing.gpg] https://missing-key.example.invalid stable main
