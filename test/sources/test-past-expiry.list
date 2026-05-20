@@ -1,0 +1,1 @@
+deb [signed-by=/usr/share/keyrings/apt-sources-test/test-past-expiry.gpg] https://past-expiry.example.invalid stable main

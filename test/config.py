@@ -5,9 +5,11 @@ IMAGE_PREFIX = "apt-sources-test"
 # Ordered mapping of distro name → base Docker image.
 # Insertion order defines the default build/test sequence.
 DISTROS: dict[str, str] = {
+    "bullseye": "debian:bullseye-slim",
     "bookworm": "debian:bookworm-slim",
     "trixie": "debian:trixie-slim",
     "forky": "debian:forky-slim",
+    "jammy": "ubuntu:jammy",
     "noble": "ubuntu:noble",
     "resolute": "ubuntu:resolute",
 }
