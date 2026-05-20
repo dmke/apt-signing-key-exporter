@@ -1,0 +1,12 @@
+Types: deb
+URIs: https://no-expiry.example.invalid
+Suites: stable
+Components: main
+Signed-By: /usr/share/keyrings/apt-sources-test/test-no-expiry.gpg
+
+Types: deb
+URIs: https://future-expiry.example.invalid
+Suites: stable
+Components: main
+Signed-By: /usr/share/keyrings/apt-sources-test/test-future-expiry.gpg
+

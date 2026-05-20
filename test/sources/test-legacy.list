@@ -1,0 +1,3 @@
+deb [signed-by=/usr/share/keyrings/apt-sources-test/test-no-expiry.gpg] https://legacy.example.invalid stable main
+# deb [signed-by=/usr/share/keyrings/apt-sources-test/test-no-expiry.gpg] https://legacy-disabled.example.invalid stable main
+deb [signed-by=/usr/share/keyrings/apt-sources-test/test-future-expiry.gpg] https://legacy-future.example.invalid stable main
