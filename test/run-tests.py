@@ -13,6 +13,8 @@ If no DISTRO arguments are given all distros are tested in sequence.
 """
 
 import argparse
+import contextlib
+import os
 import subprocess
 import sys
 import tempfile
@@ -38,9 +40,23 @@ _RED = "\033[31m"
 _YELLOW = "\033[33m"
 _RESET = "\033[0m"
 
+_IN_GHA = os.getenv("GITHUB_ACTIONS") == "true"
+
 
 def _colorize(text: str, color: str) -> str:
     return f"{color}{text}{_RESET}" if sys.stdout.isatty() else text
+
+
+@contextlib.contextmanager
+def _gha_group(title: str):
+    """Wrap output in a GitHub Actions collapsible log group when running in CI."""
+    if _IN_GHA:
+        print(f"::group::{title}")
+    try:
+        yield
+    finally:
+        if _IN_GHA:
+            print("::endgroup::")
 
 
 class Results:
@@ -129,17 +145,20 @@ def run_distro(
 
     exit_code, stdout, stderr = run_in_container(image, deb_path)
 
-    # Always show container output on failure; only show it in verbose mode otherwise.
-    if exit_code != 0 or verbose:
-        print()
-        print(f"  --- stdout (exit {exit_code}) ---")
-        for line in stdout.splitlines():
-            print(f"  {line}")
-        if stderr.strip():
-            print("  --- stderr ---")
-            for line in stderr.splitlines():
+    # Show container output on failure or when explicitly requested.  In GitHub
+    # Actions always show it, but wrapped in a collapsible group so it doesn't
+    # clutter the log under normal circumstances.
+    if exit_code != 0 or verbose or _IN_GHA:
+        with _gha_group(f"Container output: {distro} (exit {exit_code})"):
+            print()
+            print(f"  --- stdout (exit {exit_code}) ---")
+            for line in stdout.splitlines():
                 print(f"  {line}")
-        print("  ---")
+            if stderr.strip():
+                print("  --- stderr ---")
+                for line in stderr.splitlines():
+                    print(f"  {line}")
+            print("  ---")
 
     if exit_code == 0:
         results.ok("exit code is 0")
