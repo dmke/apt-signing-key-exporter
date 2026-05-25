@@ -38,6 +38,14 @@ except ImportError:
 
 __version__ = "development"  # replaced in build script
 
+_debug = False
+
+
+def _dbg(msg: str) -> None:
+    """Print *msg* to stderr when debug mode is active."""
+    if _debug:
+        print(f"debug: {msg}", file=sys.stderr)
+
 
 # ----------------------------------------------------------------------
 # Data types
@@ -138,7 +146,13 @@ def collect_signed_by_refs() -> list[SignedByRef]:
         if pair in seen:
             continue
         seen.add(pair)
-        refs.append(SignedByRef(source_file=entry.file, key_ref=key_ref))
+        ref = SignedByRef(source_file=entry.file, key_ref=key_ref)
+        refs.append(ref)
+        kind = _classify_key_ref(key_ref)
+        if kind == "inline":
+            _dbg(f"source {entry.file!r}: Signed-By = <inline PGP block>")
+        else:
+            _dbg(f"source {entry.file!r}: Signed-By = {key_ref!r}")
 
     return refs
 
@@ -251,11 +265,21 @@ def read_key_records(key_ref: str) -> list[GPGKeyRecord]:
     if kind == "file":
         if not os.path.isfile(key_ref):
             raise FileNotFoundError(f"key file not found: {key_ref!r}")
+        _dbg(f"reading key file {key_ref!r}")
         with open(key_ref, "rb") as f:
-            return _import_raw_keys(f.read())
+            records = _import_raw_keys(f.read())
+        _dbg(f"  {len(records)} key record(s) in {key_ref!r}")
+        for r in records:
+            _dbg(f"  {r.key_type} {r.fingerprint} uid={r.uid!r} expires={r.expires}")
+        return records
 
     if kind == "inline":
-        return _import_raw_keys(_normalize_inline_key(key_ref))
+        _dbg("reading inline PGP block")
+        records = _import_raw_keys(_normalize_inline_key(key_ref))
+        _dbg(f"  {len(records)} key record(s) in inline block")
+        for r in records:
+            _dbg(f"  {r.key_type} {r.fingerprint} uid={r.uid!r} expires={r.expires}")
+        return records
 
     if kind == "fingerprint":
         raise NotImplementedError(
@@ -388,8 +412,17 @@ if __name__ == "__main__":
     p.add_argument(
         "--version", "-v", action="version", version=f"%(prog)s {__version__}"
     )
+    p.add_argument(
+        "--debug",
+        "-D",
+        action="store_true",
+        default=False,
+        help="Print debug information (files read, parsed contents) to stderr.",
+    )
 
     args = p.parse_args()
+
+    _debug = args.debug
     text = collect_metrics()
 
     if args.output == "-":

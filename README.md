@@ -132,9 +132,10 @@ different directory.
 ## Usage
 
 ```
-apt_signing_key_exporter [--output FILE]
+apt_signing_key_exporter [--output FILE] [--debug]
 
   --output FILE, -o FILE   Write metrics to FILE (default: stdout)
+  --debug, -D              Print debug information to stderr
   --version                Print version and exit
 ```
 
@@ -153,6 +154,19 @@ $ /usr/bin/apt_signing_key_exporter \
 
 Output is written atomically (write to a sibling temp file, then `rename(2)`)
 so node_exporter never reads a partially-written file.
+
+Pass `--debug` (or `-D`) to print diagnostic information to stderr: each
+source file processed, its `Signed-By` value, and the fingerprint, UID, and
+expiry timestamp of every parsed key record:
+
+```console
+$ /usr/bin/apt_signing_key_exporter --debug
+debug: source '/etc/apt/sources.list.d/docker.sources': Signed-By = '/usr/share/keyrings/docker.gpg'
+debug: reading key file '/usr/share/keyrings/docker.gpg'
+debug:   2 key record(s) in '/usr/share/keyrings/docker.gpg'
+debug:   pub 9DC858229FC7DD38854AE2D88D81803C0EBFCD88 uid='Docker Release (CE deb) <docker@docker.com>' expires=0
+debug:   sub 7EA0A9C3F273FCD8176C4F2F5B729FBEF38E64DB uid='Docker Release (CE deb) <docker@docker.com>' expires=0
+```
 
 
 ## Limitations
