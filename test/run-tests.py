@@ -106,6 +106,8 @@ dpkg -i /tmp/apt-signing-key-exporter.deb \
      echo "  --- stderr ---" >&2; cat /tmp/install_stderr >&2
      exit 1; }
 apt_signing_key_exporter 2>/tmp/script_stderr
+apt_signing_key_exporter -o /tmp/output.prom
+stat -c 'perm:%a' /tmp/output.prom >>/tmp/script_stderr
 cat /tmp/script_stderr >&2
 """
 
@@ -191,6 +193,9 @@ def run_distro(
 
     # The missing-key fixture must produce a warning on stderr.
     results.assert_in("missing key warning in stderr", "test-missing.gpg", stderr)
+
+    # The generated output file should be world-readable.
+    results.assert_in("output file is world-readable", "perm:644", stderr)
 
 
 if __name__ == "__main__":

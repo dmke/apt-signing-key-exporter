@@ -437,6 +437,7 @@ if __name__ == "__main__":
         try:
             with os.fdopen(tmp_fd, "w") as f:
                 f.write(text)
+            os.chmod(tmp_path, 0o644)
             os.replace(tmp_path, out_path)
         except Exception:
             try:
