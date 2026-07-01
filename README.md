@@ -31,13 +31,22 @@ Keys are inspected via `python3-gpg` (GPGME bindings).
 
 | Metric | Type | Description | Labels |
 |:-------|:-----|:------------|:-------|
-| `apt_signing_key_expire_time_seconds`  | gauge | Unix timestamp when the key expires; `0` = never expires | `source_file`, `key_file`, `fingerprint`, `uid`, `key_type` (`pub` or `sub`) |
-| `apt_signing_key_read_errors`          | gauge | Number of key files that could not be read or parsed (full error logged to stderr) | _(none)_ |
+| `apt_signing_key_expire_time_seconds`  | gauge | Unix timestamp when the keyring's last valid signing key expires; `0` = a signing key that never expires; a timestamp in the past = no valid signing key left | `source_file`, `key_file`, `fingerprint`, `uid`, `key_type` (`pub` or `sub`) |
+| `apt_signing_key_read_errors`          | gauge | Number of key files that could not be read, parsed, or that contain no signing-capable key (full error logged to stderr) | _(none)_ |
+
+One sample is emitted per keyring, not per subkey. `apt` verifies repository
+signatures with any signing-capable key in the keyring, so the exporter reports
+the single key that governs when verification breaks: a still-valid signer that
+never expires, otherwise the valid signer that expires last, otherwise (once
+none are valid) the one that expired most recently. Encryption- or auth-only
+subkeys and signing subkeys that have been superseded by a newer one are
+ignored, so they no longer raise false expiry alerts. The `fingerprint`, `uid`
+and `key_type` labels describe that governing key.
 
 Example output:
 
 ```
-# HELP apt_signing_key_expire_time_seconds Unix timestamp when the APT signing key expires (0 means the key never expires).
+# HELP apt_signing_key_expire_time_seconds Unix timestamp when the keyring's last valid APT signing key expires (0 means a signing key that never expires; a timestamp in the past means no valid signing key remains).
 # TYPE apt_signing_key_expire_time_seconds gauge
 apt_signing_key_expire_time_seconds{fingerprint="...",key_file="/usr/share/keyrings/docker.gpg",key_type="pub",source_file="/etc/apt/sources.list.d/docker.sources",uid="Docker Release (CE deb) <docker@docker.com>"} 0
 ```

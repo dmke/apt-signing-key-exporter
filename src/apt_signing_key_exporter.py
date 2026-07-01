@@ -66,6 +66,8 @@ class GPGKeyRecord(NamedTuple):
     uid: str  # first non-revoked, non-invalid user ID (or '')
     key_type: str  # 'pub' (primary) or 'sub' (subkey)
     expires: int  # expiry unix timestamp; 0 = never expires
+    can_sign: bool  # key carries the sign capability (used by apt to verify)
+    valid: bool  # not expired, revoked, invalid or disabled right now
 
 
 # ----------------------------------------------------------------------
@@ -211,9 +213,42 @@ def _parse_gpg_keys(keys) -> list[GPGKeyRecord]:
                     uid=first_uid,
                     key_type="pub" if i == 0 else "sub",
                     expires=sk.expires,
+                    can_sign=bool(sk.can_sign),
+                    valid=not (
+                        sk.expired or sk.revoked or sk.invalid or sk.disabled
+                    ),
                 )
             )
     return records
+
+
+def _governing_signing_key(records: list[GPGKeyRecord]) -> Optional[GPGKeyRecord]:
+    """
+    Pick the key whose expiry determines when apt can no longer verify a repo.
+
+    apt verifies Release/InRelease signatures with any signing-capable key in
+    the keyring, so encryption- or auth-only subkeys are irrelevant, and an
+    expired signing key does not matter while a newer one is still valid.
+
+    Returns the governing key:
+      * a currently-valid signer that never expires (expires == 0), if any;
+      * otherwise the valid signer that expires last;
+      * otherwise (no valid signer remains) the signer that expired most
+        recently, so its past timestamp still trips expiry alerts.
+    Returns None when the keyring holds no signing-capable key at all.
+    """
+    signers = [r for r in records if r.can_sign]
+    if not signers:
+        return None
+
+    valid = [r for r in signers if r.valid]
+    if valid:
+        never = next((r for r in valid if r.expires == 0), None)
+        if never is not None:
+            return never
+        return max(valid, key=lambda r: r.expires)
+
+    return max(signers, key=lambda r: r.expires)
 
 
 def _classify_key_ref(key_ref: str) -> str:
@@ -270,7 +305,10 @@ def read_key_records(key_ref: str) -> list[GPGKeyRecord]:
             records = _import_raw_keys(f.read())
         _dbg(f"  {len(records)} key record(s) in {key_ref!r}")
         for r in records:
-            _dbg(f"  {r.key_type} {r.fingerprint} uid={r.uid!r} expires={r.expires}")
+            _dbg(
+                f"  {r.key_type} {r.fingerprint} uid={r.uid!r} "
+                f"expires={r.expires} can_sign={r.can_sign} valid={r.valid}"
+            )
         return records
 
     if kind == "inline":
@@ -278,7 +316,10 @@ def read_key_records(key_ref: str) -> list[GPGKeyRecord]:
         records = _import_raw_keys(_normalize_inline_key(key_ref))
         _dbg(f"  {len(records)} key record(s) in inline block")
         for r in records:
-            _dbg(f"  {r.key_type} {r.fingerprint} uid={r.uid!r} expires={r.expires}")
+            _dbg(
+                f"  {r.key_type} {r.fingerprint} uid={r.uid!r} "
+                f"expires={r.expires} can_sign={r.can_sign} valid={r.valid}"
+            )
         return records
 
     if kind == "fingerprint":
@@ -353,16 +394,26 @@ def collect_metrics() -> str:
             print(f"Warning: {key_file_label}: no keys found in file", file=sys.stderr)
             continue
 
-        for record in key_records:
-            for source_file in sorted(source_files):
-                labels: dict[str, str] = {
-                    "source_file": source_file,
-                    "key_file": key_file_label,
-                    "fingerprint": record.fingerprint,
-                    "uid": record.uid,
-                    "key_type": record.key_type,
-                }
-                expire_samples.append((labels, record.expires))
+        # apt verifies with any signing-capable key in the keyring, so collapse
+        # each keyring to the single key that governs when verification breaks.
+        record = _governing_signing_key(key_records)
+        if record is None:
+            error_count += len(source_files)
+            print(
+                f"Warning: {key_file_label}: no signing-capable key found",
+                file=sys.stderr,
+            )
+            continue
+
+        for source_file in sorted(source_files):
+            labels: dict[str, str] = {
+                "source_file": source_file,
+                "key_file": key_file_label,
+                "fingerprint": record.fingerprint,
+                "uid": record.uid,
+                "key_type": record.key_type,
+            }
+            expire_samples.append((labels, record.expires))
 
     output_lines: list[str] = []
 
@@ -370,8 +421,9 @@ def collect_metrics() -> str:
         output_lines.extend(
             _export_gauge(
                 "apt_signing_key_expire_time_seconds",
-                "Unix timestamp when the APT signing key expires"
-                " (0 means the key never expires).",
+                "Unix timestamp when the keyring's last valid APT signing key"
+                " expires (0 means a signing key that never expires; a"
+                " timestamp in the past means no valid signing key remains).",
                 expire_samples,
             )
         )

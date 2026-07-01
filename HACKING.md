@@ -82,8 +82,20 @@ reading the system keyring) and are skipped with an informational log message.
 For each imported key, `_parse_gpg_keys` walks `key.subkeys` — a flat
 list where index 0 is the primary key and subsequent entries are subkeys — and
 produces one `GPGKeyRecord` per (sub)key. Each record carries the full
-fingerprint, first valid UID, `key_type` (`pub`/`sub`), and expiry Unix
-timestamp. An expiry of `0` means the key never expires.
+fingerprint, first valid UID, `key_type` (`pub`/`sub`), expiry Unix timestamp,
+whether the key can sign (`can_sign`), and whether it is currently usable
+(`valid` — not expired, revoked, invalid, or disabled). An expiry of `0` means
+the key never expires.
+
+`_governing_signing_key` then collapses those records to the single key that
+determines when `apt` can no longer verify a repository. `apt` accepts any
+signing-capable key in the keyring, so encryption- or auth-only subkeys are
+irrelevant and an expired signing subkey does not matter while a newer one is
+still valid. It returns a still-valid signer that never expires if present,
+otherwise the valid signer with the latest expiry, otherwise (no valid signer
+left) the most-recently-expired signer so its past timestamp still trips alerts.
+`None` is returned — and counted as a read error — when no signing-capable key
+exists at all.
 
 
 ### Stage 3: Prometheus text formatting
@@ -91,7 +103,8 @@ timestamp. An expiry of `0` means the key never expires.
 `collect_metrics` groups records by key reference, iterates in sorted order
 for deterministic output, and builds two metric families:
 
-- `apt_signing_key_expire_time_seconds` — expiry timestamp per (sub)key
+- `apt_signing_key_expire_time_seconds` — expiry timestamp of the governing
+  signing key, one sample per keyring (see `_governing_signing_key` above)
 - `apt_signing_key_read_errors` — total number of key files that could not be
   read or parsed (label-free gauge, always emitted, even when `0`); the full
   error message for each failure is written to stderr
@@ -133,19 +146,28 @@ Each image has:
 
 ### Test fixtures
 
-`test/keyrings/` contains three static GPG public key pairs:
+`test/keyrings/` contains four static GPG public key pairs:
 
-| File stem | Key | Expiry |
-|:----------|:----|:-------|
-| `test-no-expiry`     | `ECC9E21201543C51B28F833F6EC11710FBF6D544` | never |
-| `test-future-expiry` | `72200D814B465654B3A305B03DE67800CA6D1E21` | 2030-06-01 |
-| `test-past-expiry`   | `8F4181F92C6A28D1AB3556243F3E79DB953F0E8F` | 2021-01-01 (already expired) |
+| File stem | Primary key | Expiry |
+|:----------|:------------|:-------|
+| `test-no-expiry`     | `536D4567B236D5EFF8151915A6DE716A2CE10440` | never |
+| `test-future-expiry` | `B338DDF2D03421B411BA4A022CEA661F48AFCBD3` | 2030-06-01 |
+| `test-past-expiry`   | `0A9FF69850E08A5A71C87467FF91AA56DB400815` | 2021-01-01 (already expired) |
+| `test-superseded`    | `DD1137EED39A7AD01A4A948A2F9129A3DCEAF0C4` | never (see below) |
+
+`test-superseded` reproduces the real-world "caddy.asc" shape: a signing-capable
+primary that never expires, an **expired encryption** subkey, an **expired
+(superseded) signing** subkey, and a **valid non-expiring signing** subkey.
+apt verifies fine with the still-valid keys, so the exporter must collapse the
+keyring to the never-expiring signer (`expires=0`) and must not emit rows for
+the two expired subkeys — the regression test for that behaviour lives in
+`run-tests.py` (`SUPERSEDED_EXPIRED_SUBKEYS`).
 
 Each key is exported in both binary (`.gpg`) and ASCII-armored (`.asc`) form.
 Private keys are never committed; they exist only in a temporary directory
 during key generation and are deleted on exit.
 
-`test/sources/` contains four source fixtures that exercise different code
+`test/sources/` contains five source fixtures that exercise different code
 paths:
 
 | File | What it tests |
@@ -153,6 +175,7 @@ paths:
 | `test-file.sources`        | deb822 format with `Signed-By: /path/to/keyfile` |
 | `test-legacy.list`         | traditional one-line format; includes a commented-out (disabled) entry |
 | `test-past-expiry.sources` | deb822 with an already-expired key |
+| `test-superseded.list`     | keyring with expired encryption / superseded signing subkeys alongside a valid signer (`.list` so all distros, incl. old python3-apt, load it) |
 | `test-inline.sources`      | deb822 with the full PGP block inlined via `Signed-By:` |
 
 
@@ -216,12 +239,13 @@ only if the existing keys are lost or if the fixture set needs to change:
 $ test/update-keys.py
 ```
 
-This creates three fresh keys, exports them to `test/keyrings/`, and rewrites
+This creates four fresh keys, exports them to `test/keyrings/`, and rewrites
 `test/sources/test-inline.sources` with the new no-expiry key embedded.
 Private keys are held in a `tempfile.TemporaryDirectory` and deleted on exit.
 
 **After regenerating keys**, the expected fingerprints hard-coded in
-`test/run-tests.py` (`FINGERPRINTS` dict) must be updated to match the new
+`test/run-tests.py` (`FINGERPRINTS` dict, plus `SUPERSEDED_EXPIRED_SUBKEYS` for
+the superseded key's two expired subkeys) must be updated to match the new
 values, which are printed by `update-keys.py` at the end of its run. The test
 images must also be rebuilt (`python3 test/create-images.py`) because the
 keyrings are baked into the images.

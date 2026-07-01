@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 REPO_ROOT = SCRIPT_DIR.parent
@@ -33,6 +34,17 @@ FINGERPRINTS = {
     "no-expiry": "536D4567B236D5EFF8151915A6DE716A2CE10440",
     "future-expiry": "B338DDF2D03421B411BA4A022CEA661F48AFCBD3",
     "past-expiry": "0A9FF69850E08A5A71C87467FF91AA56DB400815",
+    # signing-capable primary of the caddy-shaped "superseded" keyring; it
+    # never expires and therefore governs the keyring's reported expiry.
+    "superseded": "DD1137EED39A7AD01A4A948A2F9129A3DCEAF0C4",
+}
+
+# The two expired subkeys of the "superseded" keyring. apt ignores them (an
+# encryption-only key and a signing key superseded by a still-valid one), so
+# the exporter must not emit a metric row for either fingerprint.
+SUPERSEDED_EXPIRED_SUBKEYS = {
+    "expired encryption subkey": "259CFC0C69190821EE5D426F75537BD6FAAA1968",
+    "expired signing subkey": "94FEF43CBD64883BFF2D8D6CF0DFA97B09BB6ECC",
 }
 
 _GREEN = "\033[32m"
@@ -86,6 +98,26 @@ class Results:
             self.ok(label)
         else:
             self.fail(f"{label}  (unexpected pattern found: {needle!r})")
+
+    def assert_equal(self, label: str, expected: str, actual: Optional[str]) -> None:
+        if actual == expected:
+            self.ok(label)
+        else:
+            self.fail(f"{label}  (expected {expected!r}, got {actual!r})")
+
+
+def metric_value(stdout: str, fingerprint: str) -> Optional[str]:
+    """Return the apt_signing_key_expire_time_seconds value for a fingerprint.
+
+    Returns the raw value token of the first matching sample line, or None when
+    no expire sample carries that fingerprint.
+    """
+    for line in stdout.splitlines():
+        if not line.startswith("apt_signing_key_expire_time_seconds"):
+            continue
+        if f'fingerprint="{fingerprint}"' in line:
+            return line.rsplit(" ", 1)[-1]
+    return None
 
 
 def image_exists(image: str) -> bool:
@@ -171,8 +203,8 @@ def run_distro(
         "expire metric present", "apt_signing_key_expire_time_seconds", stdout
     )
 
-    # Primary-key fingerprints for all three test keys must appear.
-    # Subkeys will produce additional rows with different fingerprints.
+    # One sample is emitted per keyring, labelled with its governing signing
+    # key; the governing fingerprint of every test keyring must appear.
     for name, fpr in FINGERPRINTS.items():
         results.assert_in(f"{name} key fingerprint", fpr, stdout)
 
@@ -182,6 +214,17 @@ def run_distro(
         f'fingerprint="{FINGERPRINTS["no-expiry"]}"',
         stdout,
     )
+
+    # The caddy-shaped "superseded" keyring must collapse to its never-expiring
+    # signing primary (expires=0, i.e. no false alert), and must NOT emit rows
+    # for its expired encryption / superseded signing subkeys.
+    results.assert_equal(
+        "superseded keyring reports expires=0",
+        "0",
+        metric_value(stdout, FINGERPRINTS["superseded"]),
+    )
+    for label, fpr in SUPERSEDED_EXPIRED_SUBKEYS.items():
+        results.assert_not_in(f"superseded {label} absent", fpr, stdout)
 
     # The commented-out line in test-legacy.list must NOT produce a metric.
     results.assert_not_in(

@@ -29,13 +29,20 @@ SOURCES = SCRIPT_DIR / "sources"
 def run_gpg(
     *args: str,
     gnupghome: Path,
+    faked_time: str | None = None,
     input: str | None = None,
 ) -> subprocess.CompletedProcess:
     import os
 
     env = {**os.environ, "GNUPGHOME": str(gnupghome)}
+    # --pinentry-mode loopback + empty --passphrase let us add subkeys to the
+    # %no-protection primary keys without an interactive agent prompt.
+    prefix = ["gpg", "--batch", "--no-tty", "--quiet",
+              "--pinentry-mode", "loopback", "--passphrase", ""]
+    if faked_time:
+        prefix += ["--faked-system-time", faked_time]
     return subprocess.run(
-        ["gpg", "--batch", "--no-tty", "--quiet", *args],
+        [*prefix, *args],
         input=input,
         capture_output=True,
         text=True,
@@ -51,6 +58,24 @@ def fingerprint(email: str, gnupghome: Path) -> str:
         if parts[0] == "fpr":
             return parts[9]
     raise RuntimeError(f"fingerprint not found for {email!r}")
+
+
+def subkey_fingerprints(email: str, gnupghome: Path) -> list[str]:
+    """Return every subkey fingerprint (excluding the primary), in key order."""
+    result = run_gpg(
+        "--list-keys", "--with-subkey-fingerprints", "--with-colons", email,
+        gnupghome=gnupghome,
+    )
+    fprs: list[str] = []
+    in_subkey = False
+    for line in result.stdout.splitlines():
+        parts = line.split(":")
+        if parts[0] == "sub":
+            in_subkey = True
+        elif parts[0] == "fpr" and in_subkey:
+            fprs.append(parts[9])
+            in_subkey = False
+    return fprs
 
 
 def export_binary(fpr: str, dest: Path, gnupghome: Path) -> None:
@@ -183,6 +208,59 @@ def main() -> None:
             print(f"    fingerprint: {fpr}")
             print(f"    written:     keyrings/test-{stem}.gpg")
             print(f"    written:     keyrings/test-{stem}.asc")
+
+        # ------------------------------------------------------------------
+        # Superseded key — mirrors the real-world "caddy.asc" shape: a
+        # signing-capable primary that never expires, an *expired encryption*
+        # subkey, an *expired (superseded) signing* subkey, and a *valid*
+        # non-expiring signing subkey.  apt happily verifies with the valid
+        # keys, so the exporter must NOT report the expired subkeys.  Built
+        # under a faked 2020 clock so the dated subkeys are demonstrably past.
+        print("==> Generating key: superseded")
+        sup_email = "superseded@test.invalid"
+        sup_time = "20200101T000000!"
+        run_gpg(
+            "--gen-key",
+            gnupghome=gnupghome,
+            faked_time=sup_time,
+            input="""\
+%no-protection
+Key-Type:    RSA
+Key-Length:  2048
+Key-Usage:   sign
+Name-Real:   Test Key Superseded
+Name-Email:  superseded@test.invalid
+Expire-Date: 0
+%commit
+""",
+        )
+        sup_fpr = fingerprint(sup_email, gnupghome)
+        # order matters: expired encryption, expired signing, valid signing.
+        run_gpg("--quick-add-key", sup_fpr, "rsa2048", "encr", "2021-01-01",
+                gnupghome=gnupghome, faked_time=sup_time)
+        run_gpg("--quick-add-key", sup_fpr, "rsa2048", "sign", "2021-01-01",
+                gnupghome=gnupghome, faked_time=sup_time)
+        run_gpg("--quick-add-key", sup_fpr, "rsa2048", "sign", "0",
+                gnupghome=gnupghome, faked_time=sup_time)
+
+        fprs["superseded"] = sup_fpr
+        import os
+
+        env = {**os.environ, "GNUPGHOME": str(gnupghome)}
+        with open(KEYRINGS / "test-superseded.gpg", "wb") as fh:
+            subprocess.run(
+                ["gpg", "--batch", "--no-tty", "--quiet", "--export", sup_fpr],
+                stdout=fh, env=env, check=True,
+            )
+        export_armored(sup_fpr, KEYRINGS / "test-superseded.asc", gnupghome)
+        sup_subs = subkey_fingerprints(sup_email, gnupghome)
+        print(f"    primary fingerprint:          {sup_fpr}")
+        print(f"    expired encryption subkey:    {sup_subs[0]}")
+        print(f"    expired (superseded) signing: {sup_subs[1]}")
+        print(f"    valid signing subkey:         {sup_subs[2]}")
+        print("    written:     keyrings/test-superseded.gpg")
+        print("    written:     keyrings/test-superseded.asc")
+        print("    NOTE: update SUPERSEDED_* fingerprints in run-tests.py")
 
         print()
         print("==> Regenerating test/sources/test-inline.sources")
